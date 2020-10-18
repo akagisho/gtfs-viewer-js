@@ -18,10 +18,12 @@
 
     h2 {
       font-size: 22pt;
+      clear: both;
     }
 
     h3 {
       font-size: 18pt;
+      clear: both;
     }
 
     #container {
@@ -31,33 +33,37 @@
   </style>
   <script>
     const gtfsFileList = [
-      'agency',
-      'agency_jp',
-      'calendar',
-      'calendar_dates',
-      'fare_attributes',
-      'fare_rules',
-      'feed_info',
-      'office_jp',
-      'routes',
-      'routes_jp',
-      'shapes',
-      'stop_times',
-      'stops',
-      'translations',
-      'trips'
+      { name: 'agency', key: 'agency_id' },
+      { name: 'agency_jp', key: 'agency_id' },
+      { name: 'calendar', key: 'service_id' },
+      { name: 'calendar_dates' },
+      { name: 'fare_attributes', key: 'fare_id' },
+      { name: 'fare_rules', key: 'fare_id' },
+      { name: 'feed_info' },
+      { name: 'office_jp', key: 'office_id' },
+      { name: 'routes', key: 'route_id' },
+      { name: 'routes_jp', key: 'route_id' },
+      { name: 'shapes', key: 'shape_id' },
+      { name: 'stop_times' },
+      { name: 'stops', key: 'stop_id' },
+      { name: 'translations' },
+      { name: 'trips' }
     ];
 
     var gtfs = {};
 
-    function csv2hash(data) {
+    function csv2hash(data, key = undefined) {
       // remove BOM
       if (encodeURIComponent(data.substr(0, 1)) == '%EF%BB%BF') {
         data = data.substr(1);
       }
 
       var lines = data.split(/\r\n|\r|\n/g);
-      var jsonArray = [];
+      if (!key) {
+        var json = [];
+      } else {
+        var json = {};
+      }
 
       var header = lines[0].replace(/['"]/g, '').split(',');
 
@@ -67,9 +73,15 @@
         for (var j = 0; j < header.length; j++) {
           a_line[header[j]] = csvArray[j].replace(/^['"]/, '').replace(/['"]$/, '');
         }
-        jsonArray.push(a_line);
+
+        if (!key) {
+          json.push(a_line);
+        }
+        else {
+          json[a_line[key]] = a_line;
+        }
       }
-      return jsonArray;
+      return json;
     }
 
     function loadGtfs(file, vue) {
@@ -81,20 +93,23 @@
           var importedFileList = unzip.getFilenames();
 
           for (var i in gtfsFileList) {
-            var gtfsFile = gtfsFileList[i] + '.txt';
+            var gtfsFile = gtfsFileList[i].name + '.txt';
             if (!importedFileList.includes(gtfsFile)) {
               continue;
             }
             var data = utf8ArrayToStr(unzip.decompress(gtfsFile));
-            var hash = csv2hash(data);
+            var hash = csv2hash(data, gtfsFileList[i].key);
 
-            gtfs[gtfsFileList[i]] = hash;
+            gtfs[gtfsFileList[i].name] = hash;
           }
 
           vue.$store.loaded = true;
           vue.agency = gtfs['agency'][0];
           vue.feed_info = gtfs['feed_info'][0];
 
+          if (vue.$route.path != '/') {
+            vue.$router.push('/');
+          }
         } catch (e) {
           alert(e.message);
         }
@@ -163,7 +178,7 @@
             </tr>
             <tr>
               <th>period</th>
-              <td>{{ feed_info.feed_start_date }} - {{ feed_info.feed_end_date }}</td>
+              <td>{{ feed_info.feed_start_date }} ~ {{ feed_info.feed_end_date }}</td>
             </tr>
           </tbody>
         </table>
@@ -186,33 +201,82 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="route in gtfs.routes">
-            <td>{{ route.route_short_name }}</td>
-            <td>{{ route.route_long_name }}</td>
+          <tr v-for="route in routes">
+            <td><router-link :to="{ path: '/routes/' + route.route_short_name }">{{ route.route_short_name }}</router-link></td>
+            <td><router-link :to="{ path: '/routes/' + route.route_long_name }">{{ route.route_long_name }}</router-link></td>
           </tr>
         </tbody>
       </table>
     </div>
   </script>
-  <script type="text/x-template" id="stop-list">
-      <div>
-        <h2>Stop List</h2>
-        <table class="table table-striped">
-          <thead>
+  <script type="text/x-template" id="route-detail">
+    <div>
+      <h2>Route Detail</h2>
+      <div v-for="route in routes">
+        <h3><span v-if="route.route_short_name">({{ route.route_short_name }}) </span>{{ route.route_long_name }}</h3>
+        <table class="table" style="width: 700px; float: right">
+          <thead class="thead-light">
             <tr>
-              <th>id</th>
-              <th>name</th>
+              <th></th>
+              <th><div class="text-center">Mon</div></th>
+              <th><div class="text-center">Tue</div></th>
+              <th><div class="text-center">Wed</div></th>
+              <th><div class="text-center">Thu</div></th>
+              <th><div class="text-center">Fri</div></th>
+              <th><div class="text-center">Sat</div></th>
+              <th><div class="text-center">Sun</div></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="stop in gtfs.stops">
-              <td>{{ stop.stop_id }}</td>
-              <td>{{ stop.stop_name }}</td>
+            <tr v-for="(trips, service_id) in route.service_ids">
+              <td><router-link :to="{ path: '/routes/' + route.route_id  + '/' + service_id }">{{ service_id }}</router-link></td>
+              <td><div class="text-center" v-if="calendar[service_id].monday == '1'">o</div></td>
+              <td><div class="text-center" v-if="calendar[service_id].tuesday == '1'">o</div></td>
+              <td><div class="text-center" v-if="calendar[service_id].wednesday == '1'">o</div></td>
+              <td><div class="text-center" v-if="calendar[service_id].thursday == '1'">o</div></td>
+              <td><div class="text-center" v-if="calendar[service_id].friday == '1'">o</div></td>
+              <td><div class="text-center" v-if="calendar[service_id].saturday == '1'">o</div></td>
+              <td><div class="text-center" v-if="calendar[service_id].sunday == '1'">o</div></td>
             </tr>
           </tbody>
         </table>
       </div>
-    </script>
+    </div>
+  </script>
+  <script type="text/x-template" id="stop-list">
+    <div>
+      <h2>Stop List</h2>
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>name</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="stop in stops">
+            <td><router-link :to="{ path: '/stops/' + stop }">{{ stop }}</router-link></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </script>
+  <script type="text/x-template" id="stop-detail">
+    <div>
+      <h2>Stop Detail</h2>
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>name</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="stop in stops">
+            <td><router-link :to="{ path: '/stops/' + stop }">{{ stop }}</router-link></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </script>
   <script>
     Vue.filter('sec2time', function (sec) {
       var hour = parseInt(sec / 3600);
@@ -245,6 +309,7 @@
             template: '#route-list',
             data: function () {
               return {
+                routes: {}
               }
             },
             created: function () {
@@ -256,6 +321,62 @@
                   router.push('/');
                   return;
                 }
+
+                this.routes = gtfs.routes;
+              }
+            }
+          }
+        },
+        {
+          path: '/routes/:route_name',
+          component: {
+            template: '#route-detail',
+            data: function () {
+              return {
+                routes: {},
+                calendar: {}
+              }
+            },
+            created: function () {
+              this.init();
+            },
+            methods: {
+              init() {
+                if (!this.$store.loaded) {
+                  router.push('/');
+                  return;
+                }
+
+                const route_name = this.$route.params.route_name;
+
+                console.log('route_name', route_name);
+
+                var routes = {};
+                for (var key in gtfs.routes) {
+                  if (gtfs.routes[key].route_short_name == route_name || gtfs.routes[key].route_long_name == route_name) {
+                    routes[key] = gtfs.routes[key];
+                    routes[key].trips = [];
+                    routes[key].service_ids = {};
+                  }
+                }
+
+                for (var i in gtfs.trips) {
+                  var trip = gtfs.trips[i];
+                  if (typeof routes[trip['route_id']] !== 'undefined') {
+                    routes[trip['route_id']].trips.push(trip);
+
+                    if (typeof routes[trip['route_id']]['service_ids'][trip.service_id] === 'undefined') {
+                      routes[trip['route_id']]['service_ids'][trip.service_id] = [trip];
+                    }
+                    else {
+                      routes[trip['route_id']]['service_ids'][trip.service_id].push(trip);
+                    }
+                  }
+                }
+
+                this.routes = routes;
+                this.calendar = gtfs.calendar;
+                console.log('routes', routes);
               }
             }
           }
@@ -266,6 +387,7 @@
             template: '#stop-list',
             data: function () {
               return {
+                stops: []
               }
             },
             created: function () {
@@ -277,6 +399,45 @@
                   router.push('/');
                   return;
                 }
+
+                var stops = [];
+                for (var key in gtfs.stops) {
+                  stops.push(gtfs.stops[key].stop_name);
+                }
+                this.stops = Array.from(new Set(stops));
+              }
+            }
+          }
+        },
+        {
+          path: '/stops/:stop_name',
+          component: {
+            template: '#stop-detail',
+            data: function () {
+              return {
+                stops: []
+              }
+            },
+            created: function () {
+              this.init();
+            },
+            methods: {
+              init() {
+                if (!this.$store.loaded) {
+                  router.push('/');
+                  return;
+                }
+
+                const stop_name = this.$route.params.stop_name;
+
+                var stops = [];
+                for (var key in gtfs.stops) {
+                  if (gtfs.stops[key].stop_name == stop_name) {
+                    stops.push(gtfs.stops[key]);
+                  }
+                }
+                this.stops = stops;
+                console.log(stops);
               }
             }
           }
