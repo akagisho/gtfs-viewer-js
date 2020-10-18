@@ -1,0 +1,308 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>GTFS Viewer</title>
+  <link href="https://unpkg.com/bootstrap/dist/css/bootstrap.min.css" type="text/css" rel="stylesheet">
+  <script src="https://unpkg.com/jquery@3.2.1/dist/jquery.min.js"></script>
+  <script src="https://unpkg.com/vue@2.6.12/dist/vue.min.js"></script>
+  <script src="https://unpkg.com/vuex@3.5.1/dist/vuex.js"></script>
+  <script src="https://unpkg.com/vue-router/dist/vue-router.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script src="js/unzip.min.js"></script>
+  <style>
+    h1 {
+      font-size: 22pt;
+    }
+
+    h2 {
+      font-size: 22pt;
+    }
+
+    h3 {
+      font-size: 18pt;
+    }
+
+    #container {
+      margin: 0 auto;
+      width: 750px;
+    }
+  </style>
+  <script>
+    const gtfsFileList = [
+      'agency',
+      'agency_jp',
+      'calendar',
+      'calendar_dates',
+      'fare_attributes',
+      'fare_rules',
+      'feed_info',
+      'office_jp',
+      'routes',
+      'routes_jp',
+      'shapes',
+      'stop_times',
+      'stops',
+      'translations',
+      'trips'
+    ];
+
+    var gtfs = {};
+
+    function csv2hash(data) {
+      // remove BOM
+      if (encodeURIComponent(data.substr(0, 1)) == '%EF%BB%BF') {
+        data = data.substr(1);
+      }
+
+      var lines = data.split(/\r\n|\r|\n/g);
+      var jsonArray = [];
+
+      var header = lines[0].replace(/['"]/g, '').split(',');
+
+      for (var i = 1; i < lines.length - 1; i++) {
+        var a_line = {};
+        var csvArray = lines[i].split(',');
+        for (var j = 0; j < header.length; j++) {
+          a_line[header[j]] = csvArray[j].replace(/^['"]/, '').replace(/['"]$/, '');
+        }
+        jsonArray.push(a_line);
+      }
+      return jsonArray;
+    }
+
+    function loadGtfs(file, vue) {
+      var zipReader = new FileReader();
+      zipReader.onload = function () {
+        try {
+          var zipArr = new Uint8Array(zipReader.result);
+          var unzip = new Zlib.Unzip(zipArr);
+          var importedFileList = unzip.getFilenames();
+
+          for (var i in gtfsFileList) {
+            var gtfsFile = gtfsFileList[i] + '.txt';
+            if (!importedFileList.includes(gtfsFile)) {
+              continue;
+            }
+            var data = utf8ArrayToStr(unzip.decompress(gtfsFile));
+            var hash = csv2hash(data);
+
+            gtfs[gtfsFileList[i]] = hash;
+          }
+
+          vue.$store.loaded = true;
+          vue.agency = gtfs['agency'][0];
+          vue.feed_info = gtfs['feed_info'][0];
+
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+      res = zipReader.readAsArrayBuffer(file);
+    }
+
+    function utf8ArrayToStr(array) {
+      var len = array.length;
+      var out = "";
+      var i = 0;
+      var char1, char2, char3;
+
+      while (i < len) {
+        char1 = array[i++];
+        switch (char1 >> 4) {
+          case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+            out += String.fromCharCode(char1);
+            break;
+          case 12: case 13:
+            char2 = array[i++];
+            out += String.fromCharCode(((char1 & 0x1F) << 6) | (char2 & 0x3F));
+            break;
+          case 14:
+            char2 = array[i++];
+            char3 = array[i++];
+            out += String.fromCharCode(((char1 & 0x0F) << 12) |
+              ((char2 & 0x3F) << 6) |
+              ((char3 & 0x3F) << 0));
+            break;
+        }
+      }
+
+      return out;
+    }
+  </script>
+</head>
+
+<body>
+  <div id="app">
+    <div class="d-flex flex-column flex-md-row align-items-center p-3 px-md-4 mb-3 bg-white border-bottom shadow-sm">
+      <h1 class="my-0 mr-md-auto font-weight-normal">
+        <router-link to="/" class="text-dark">GTFS Viewer</router-link>
+      </h1>
+    </div>
+    <div id="container">
+      <h2>GTFS File</h2>
+      <div style="margin-bottom: 30px;">
+        <input type="file" id="file" name="file" accept="application/zip" @change="onFileChange">
+      </div>
+      <div>
+        <h2>Feed Info</h2>
+        <table class="table table-striped">
+          <tbody>
+            <tr>
+              <th>publisher</th>
+              <td>{{ feed_info.feed_publisher_name }}</td>
+            </tr>
+            <tr>
+              <th>url</th>
+              <td><a :href="feed_info.feed_publisher_url" target="_blank">{{ feed_info.feed_publisher_url }}</a></td>
+            </tr>
+            <tr>
+              <th>version</th>
+              <td>{{ feed_info.feed_version }}</td>
+            </tr>
+            <tr>
+              <th>period</th>
+              <td>{{ feed_info.feed_start_date }} - {{ feed_info.feed_end_date }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="this.$store.loaded" style="margin-bottom: 30px;">
+          <button type="button" class="btn btn-secondary" v-on:click="router.push('/routes')">Routes</button>
+          <button type="button" class="btn btn-secondary" v-on:click="router.push('/stops')">Stops</button>
+        </div>
+      </div>
+      <router-view></router-view>
+    </div>
+  </div>
+  <script type="text/x-template" id="route-list">
+    <div>
+      <h2>Route List</h2>
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>short name</th>
+            <th>long name</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="route in gtfs.routes">
+            <td>{{ route.route_short_name }}</td>
+            <td>{{ route.route_long_name }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </script>
+  <script type="text/x-template" id="stop-list">
+      <div>
+        <h2>Stop List</h2>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>name</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="stop in gtfs.stops">
+              <td>{{ stop.stop_id }}</td>
+              <td>{{ stop.stop_name }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </script>
+  <script>
+    Vue.filter('sec2time', function (sec) {
+      var hour = parseInt(sec / 3600);
+      var min = parseInt((sec % 3600) / 60);
+      hour = ('00' + hour).substr(-2, 2);
+      min = ('00' + min).substr(-2, 2);
+      return hour + ':' + min;
+    });
+
+    const store = new Vuex.Store({
+    })
+
+    const router = new VueRouter({
+      routes: [
+        {
+          path: '/',
+          component: {
+            template: '#index',
+            data: function () {
+              return {
+              }
+            },
+            created: function () {
+            }
+          }
+        },
+        {
+          path: '/routes',
+          component: {
+            template: '#route-list',
+            data: function () {
+              return {
+              }
+            },
+            created: function () {
+              this.init();
+            },
+            methods: {
+              init() {
+                if (!this.$store.loaded) {
+                  router.push('/');
+                  return;
+                }
+              }
+            }
+          }
+        },
+        {
+          path: '/stops',
+          component: {
+            template: '#stop-list',
+            data: function () {
+              return {
+              }
+            },
+            created: function () {
+              this.init();
+            },
+            methods: {
+              init() {
+                if (!this.$store.loaded) {
+                  router.push('/');
+                  return;
+                }
+              }
+            }
+          }
+        }
+      ]
+    });
+
+    new Vue({
+      router: router,
+      el: '#app',
+      store,
+      data: {
+        loaded: false,
+        feed_info: {},
+        agency: {},
+      },
+      created: function () {
+      },
+      methods: {
+        onFileChange(e) {
+          const files = e.target.files || e.dataTransfer.files;
+          loadGtfs(files[0], this);
+        }
+      }
+    });
+  </script>
+</body>
+
+</html>
