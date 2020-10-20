@@ -52,6 +52,28 @@
 
     var gtfs = {};
 
+    const defaultSortFunc = function (a, b, key, direction = 1, nullsFirst = 1) {
+      if (a[key] == undefined && b[key] == undefined) return 0;
+      if (a[key] == undefined) return nullsFirst * 1;
+      if (b[key] == undefined) return nullsFirst * -1;
+      if (a[key] > b[key]) return direction * 1;
+      if (a[key] < b[key]) return direction * -1;
+      return 0;
+    }
+
+    const sortFunc = function (data, keys, direction = 1, nullsFirst = 1) {
+      const _data = data.slice();
+      _data.sort((a, b) => {
+        let order = 0;
+        keys.some(key => {
+          order = defaultSortFunc(a, b, key, direction = 1, nullsFirst = 1);
+          return !!order;
+        });
+        return order;
+      });
+      return _data;
+    }
+
     function csv2hash(data, key = undefined) {
       // remove BOM
       if (encodeURIComponent(data.substr(0, 1)) == '%EF%BB%BF') {
@@ -103,7 +125,7 @@
             gtfs[gtfsFileList[i].name] = hash;
           }
 
-          vue.$store.loaded = true;
+          vue.loaded = true;
           vue.agency = gtfs['agency'][0];
           vue.feed_info = gtfs['feed_info'][0];
 
@@ -182,7 +204,7 @@
             </tr>
           </tbody>
         </table>
-        <div v-if="this.$store.loaded" style="margin-bottom: 30px;">
+        <div v-if="this.loaded" style="margin-bottom: 30px;">
           <button type="button" class="btn btn-secondary" v-on:click="router.push('/routes')">Routes</button>
           <button type="button" class="btn btn-secondary" v-on:click="router.push('/stops')">Stops</button>
         </div>
@@ -214,7 +236,7 @@
       <h2>Route Detail</h2>
       <div v-for="route in routes">
         <h3><span v-if="route.route_short_name">({{ route.route_short_name }}) </span>{{ route.route_long_name }}</h3>
-        <table class="table" style="width: 700px; float: right">
+        <table class="table" style="width: 700px; margin-bottom: 50px; float: right">
           <thead class="thead-light">
             <tr>
               <th></th>
@@ -228,15 +250,15 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(trips, service_id) in route.service_ids">
-              <td><router-link :to="{ path: '/routes/' + route.route_id  + '/' + service_id }">{{ service_id }}</router-link></td>
-              <td><div class="text-center" v-if="calendar[service_id].monday == '1'">o</div></td>
-              <td><div class="text-center" v-if="calendar[service_id].tuesday == '1'">o</div></td>
-              <td><div class="text-center" v-if="calendar[service_id].wednesday == '1'">o</div></td>
-              <td><div class="text-center" v-if="calendar[service_id].thursday == '1'">o</div></td>
-              <td><div class="text-center" v-if="calendar[service_id].friday == '1'">o</div></td>
-              <td><div class="text-center" v-if="calendar[service_id].saturday == '1'">o</div></td>
-              <td><div class="text-center" v-if="calendar[service_id].sunday == '1'">o</div></td>
+            <tr v-for="service in route.services">
+              <td>For <router-link :to="{ path: '/routes/' + route.route_id  + '/' + service.service_id }">{{ service.trips[0].trip_headsign }}</router-link></td>
+              <td><div class="text-center" v-if="service.monday == '1'">o</div></td>
+              <td><div class="text-center" v-if="service.tuesday == '1'">o</div></td>
+              <td><div class="text-center" v-if="service.wednesday == '1'">o</div></td>
+              <td><div class="text-center" v-if="service.thursday == '1'">o</div></td>
+              <td><div class="text-center" v-if="service.friday == '1'">o</div></td>
+              <td><div class="text-center" v-if="service.saturday == '1'">o</div></td>
+              <td><div class="text-center" v-if="service.sunday == '1'">o</div></td>
             </tr>
           </tbody>
         </table>
@@ -286,9 +308,6 @@
       return hour + ':' + min;
     });
 
-    const store = new Vuex.Store({
-    })
-
     const router = new VueRouter({
       routes: [
         {
@@ -317,11 +336,6 @@
             },
             methods: {
               init() {
-                if (!this.$store.loaded) {
-                  router.push('/');
-                  return;
-                }
-
                 this.routes = gtfs.routes;
               }
             }
@@ -333,7 +347,7 @@
             template: '#route-detail',
             data: function () {
               return {
-                routes: {},
+                routes: [],
                 calendar: {}
               }
             },
@@ -342,41 +356,57 @@
             },
             methods: {
               init() {
-                if (!this.$store.loaded) {
-                  router.push('/');
-                  return;
-                }
-
                 const route_name = this.$route.params.route_name;
 
-                console.log('route_name', route_name);
+                var routes = [];
+                var route_ids = [];
+                var route_trips = {};
 
-                var routes = {};
                 for (var key in gtfs.routes) {
                   if (gtfs.routes[key].route_short_name == route_name || gtfs.routes[key].route_long_name == route_name) {
-                    routes[key] = gtfs.routes[key];
-                    routes[key].trips = [];
-                    routes[key].service_ids = {};
+                    var route = { ...gtfs.routes[key] };
+                    route['services'] = [];
+                    routes.push(route);
+                    route_ids.push(route.route_id);
                   }
                 }
 
                 for (var i in gtfs.trips) {
-                  var trip = gtfs.trips[i];
-                  if (typeof routes[trip['route_id']] !== 'undefined') {
-                    routes[trip['route_id']].trips.push(trip);
-
-                    if (typeof routes[trip['route_id']]['service_ids'][trip.service_id] === 'undefined') {
-                      routes[trip['route_id']]['service_ids'][trip.service_id] = [trip];
+                  var trip = { ...gtfs.trips[i] };
+                  if (route_ids.includes(trip['route_id'])) {
+                    if (typeof route_trips[trip['route_id']] == 'undefined') {
+                      route_trips[trip['route_id']] = {};
+                      route_trips[trip['route_id']][trip.service_id] = [];
+                    } else {
+                      if (typeof route_trips[trip['route_id']][trip.service_id] == 'undefined') {
+                        route_trips[trip['route_id']][trip.service_id] = [];
+                      }
                     }
-                    else {
-                      routes[trip['route_id']]['service_ids'][trip.service_id].push(trip);
+                    route_trips[trip['route_id']][trip.service_id].push(trip);
+                  }
+                }
+
+                for (var route_id in route_trips) {
+                  for (var i in routes) {
+                    if (routes[i].route_id == route_id) {
+                      for (var service_id in route_trips[route_id]) {
+                        if (typeof gtfs.calendar[service_id] == 'undefined') {
+                          // TODO: refer calendar_dates
+                          continue;
+                        }
+                        routes[i].services.push(Object.assign(
+                          { ...gtfs.calendar[service_id] },
+                          { trips: route_trips[route_id][service_id] }
+                        ));
+                      }
+                      routes[i].services = sortFunc(routes[i].services, ['sunday', 'saturday', 'monday']);
+                      break;
                     }
                   }
                 }
 
-                this.routes = routes;
+                this.routes = sortFunc(routes, ['route_short_name', 'route_long_name']);
                 this.calendar = gtfs.calendar;
-                console.log('routes', routes);
               }
             }
           }
@@ -395,11 +425,6 @@
             },
             methods: {
               init() {
-                if (!this.$store.loaded) {
-                  router.push('/');
-                  return;
-                }
-
                 var stops = [];
                 for (var key in gtfs.stops) {
                   stops.push(gtfs.stops[key].stop_name);
@@ -423,11 +448,6 @@
             },
             methods: {
               init() {
-                if (!this.$store.loaded) {
-                  router.push('/');
-                  return;
-                }
-
                 const stop_name = this.$route.params.stop_name;
 
                 var stops = [];
@@ -437,7 +457,6 @@
                   }
                 }
                 this.stops = stops;
-                console.log(stops);
               }
             }
           }
@@ -448,18 +467,29 @@
     new Vue({
       router: router,
       el: '#app',
-      store,
       data: {
         loaded: false,
         feed_info: {},
         agency: {},
       },
       created: function () {
+        if (this.$route.path != '/' && Object.keys(gtfs).length == 0) {
+          router.push('/');
+          return;
+        }
       },
       methods: {
         onFileChange(e) {
           const files = e.target.files || e.dataTransfer.files;
           loadGtfs(files[0], this);
+        }
+      },
+      watch: {
+        '$route': function (to, from) {
+          if (to.path != '/' && Object.keys(gtfs).length == 0) {
+            router.push('/');
+            return;
+          }
         }
       }
     });
