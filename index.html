@@ -32,6 +32,8 @@
     }
   </style>
   <script>
+    'use strict';
+
     const gtfsFileList = [
       { name: 'agency', key: 'agency_id' },
       { name: 'agency_jp', key: 'agency_id' },
@@ -136,7 +138,7 @@
           alert(e.message);
         }
       }
-      res = zipReader.readAsArrayBuffer(file);
+      zipReader.readAsArrayBuffer(file);
     }
 
     function utf8ArrayToStr(array) {
@@ -336,7 +338,20 @@
             },
             methods: {
               init() {
-                this.routes = gtfs.routes;
+                let routes = [];
+                let names = [];
+
+                for (let route_id in gtfs.routes) {
+                  let route = gtfs.routes[route_id];
+                  let name = route.route_short_name + '-' + route.route_long_name;
+                  if (names.includes(name)) {
+                    continue;
+                  }
+                  routes.push(route);
+                  names.push(name);
+                }
+
+                this.routes = routes;
               }
             }
           }
