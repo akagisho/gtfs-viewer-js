@@ -358,18 +358,47 @@
   <script type="text/x-template" id="stop-detail">
     <div>
       <h2>Stop Detail</h2>
-      <table class="table table-striped">
-        <thead>
+      <div v-for="route in routes">
+        <h3>Route Detail</h3>
+        <table class="table table-striped">
           <tr>
-            <th>name</th>
+            <th>short name</th>
+            <td>{{ route.route_short_name }}</td>
           </tr>
-        </thead>
-        <tbody>
-          <tr v-for="stop in stops">
-            <td><router-link :to="{ path: '/stops/' + stop }">{{ stop }}</router-link></td>
+          <tr>
+            <th>long name</th>
+            <td>{{ route.route_long_name }}</td>
           </tr>
-        </tbody>
-      </table>
+        </table>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>headsign</th>
+              <th><div class="text-center">Mon</div></th>
+              <th><div class="text-center">Tue</div></th>
+              <th><div class="text-center">Wed</div></th>
+              <th><div class="text-center">Thu</div></th>
+              <th><div class="text-center">Fri</div></th>
+              <th><div class="text-center">Sat</div></th>
+              <th><div class="text-center">Sun</div></th>
+              <th>time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="stop_time in route.stop_times">
+              <td><router-link :to="{ path: '/routes/' + stop_time.route_id  + '/' + stop_time.calendar.service_id }">{{ stop_time.trip.trip_headsign }}</router-link></td>
+              <td><div class="text-center" v-if="stop_time.calendar.monday == '1'">o</div></td>
+              <td><div class="text-center" v-if="stop_time.calendar.tuesday == '1'">o</div></td>
+              <td><div class="text-center" v-if="stop_time.calendar.wednesday == '1'">o</div></td>
+              <td><div class="text-center" v-if="stop_time.calendar.thursday == '1'">o</div></td>
+              <td><div class="text-center" v-if="stop_time.calendar.friday == '1'">o</div></td>
+              <td><div class="text-center" v-if="stop_time.calendar.saturday == '1'">o</div></td>
+              <td><div class="text-center" v-if="stop_time.calendar.sunday == '1'">o</div></td>
+              <td>{{ stop_time.arrival_time | trim_sec }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </script>
   <script>
@@ -382,7 +411,10 @@
     });
 
     Vue.filter('trim_sec', function (time) {
-      return time.replace(/:\d\d$/, '');
+      if (typeof time == 'string') {
+        time = time.replace(/:\d\d$/, '');
+      }
+      return time;
     });
 
     const router = new VueRouter({
@@ -628,7 +660,8 @@
             template: '#stop-detail',
             data: function () {
               return {
-                stops: []
+                stops: [],
+                routes: []
               }
             },
             created: function () {
@@ -638,13 +671,43 @@
               init() {
                 const stop_name = this.$route.params.stop_name;
 
-                var stops = [];
-                for (var key in gtfs.stops) {
+                let stops = [];
+                let stop_ids = [];
+                for (let key in gtfs.stops) {
                   if (gtfs.stops[key].stop_name == stop_name) {
                     stops.push(gtfs.stops[key]);
+                    stop_ids.push(gtfs.stops[key].stop_id);
                   }
                 }
+
+                let _routes = {};
+                for (let i in gtfs.stop_times) {
+                  if (stop_ids.includes(gtfs.stop_times[i].stop_id)) {
+                    let stop_time = { ...gtfs.stop_times[i] };
+                    let route_id = gtfs.trips[stop_time['trip_id']]['route_id'];
+
+                    if (typeof _routes[route_id] == 'undefined') {
+                      _routes[route_id] = { ...gtfs.routes[route_id] }
+                      _routes[route_id]['stop_times'] = [];
+                    }
+                    _routes[route_id]['stop_times'].push(Object.assign(stop_time, {
+                      stop: gtfs.stops[stop_time['stop_id']],
+                      trip: gtfs.trips[stop_time['trip_id']],
+                      route_id: gtfs.trips[stop_time['trip_id']]['route_id'],
+                      route: gtfs.routes[gtfs.trips[stop_time['trip_id']]['route_id']],
+                      service_id: gtfs.trips[stop_time['trip_id']]['service_id'],
+                      calendar: gtfs.calendar[gtfs.trips[stop_time['trip_id']]['service_id']]
+                    }));
+                  }
+                }
+
+                let routes = [];
+                for (let route_id in _routes) {
+                  routes.push(_routes[route_id]);
+                }
+
                 this.stops = stops;
+                this.routes = routes;
               }
             }
           }
