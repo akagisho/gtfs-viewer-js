@@ -137,7 +137,7 @@
           }
 
           vue.loaded = true;
-          vue.agency = gtfs['agency'][0];
+          vue.agencies = gtfs['agency'];
           vue.feed_info = gtfs['feed_info'][0];
 
           if (vue.$route.path != '/') {
@@ -212,6 +212,21 @@
             <tr>
               <th>period</th>
               <td>{{ feed_info.feed_start_date }} ~ {{ feed_info.feed_end_date }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <h2>Agency List</h2>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>name</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="agency in agencies">
+              <td>{{ agency.agency_id }}</td>
+              <td><a :href="agency.agency_url" target="_blank">{{ agency.agency_name }}</a></td>
             </tr>
           </tbody>
         </table>
@@ -358,6 +373,13 @@
   <script type="text/x-template" id="stop-detail">
     <div>
       <h2>Stop Detail</h2>
+      <table class="table table-striped">
+        <tr>
+        <tr>
+          <th>name</th>
+          <td>{{ stops[0].stop_name }}</td>
+        </tr>
+      </table>
       <div v-for="route in routes">
         <h3>Route Detail</h3>
         <table class="table table-striped">
@@ -721,7 +743,7 @@
       data: {
         loaded: false,
         feed_info: {},
-        agency: {},
+        agencies: [],
       },
       created: function () {
         if (this.$route.path != '/' && Object.keys(gtfs).length == 0) {
