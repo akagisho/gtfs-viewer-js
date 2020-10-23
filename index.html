@@ -49,7 +49,7 @@
       { name: 'stop_times' },
       { name: 'stops', key: 'stop_id' },
       { name: 'translations' },
-      { name: 'trips' }
+      { name: 'trips', key: 'trip_id' }
     ];
 
     var gtfs = {};
@@ -95,7 +95,11 @@
         var a_line = {};
         var csvArray = lines[i].split(',');
         for (var j = 0; j < header.length; j++) {
-          a_line[header[j]] = csvArray[j].replace(/^['"]/, '').replace(/['"]$/, '');
+          var value = csvArray[j].replace(/^['"]/, '').replace(/['"]$/, '');
+          if (value.match(/^[0-9]+$/)) {
+            value = Number(value);
+          }
+          a_line[header[j]] = value;
         }
 
         if (!key) {
@@ -267,6 +271,68 @@
       </div>
     </div>
   </script>
+  <script type="text/x-template" id="route-timetable">
+    <div>
+      <h2>Route Timetable</h2>
+      <h3>Route Detail</h3>
+      <table class="table table-striped">
+        <tr>
+          <th>short name</th>
+          <td>{{ route.route_short_name }}</td>
+        </tr>
+        <tr>
+          <th>long name</th>
+          <td>{{ route.route_long_name }}</td>
+        </tr>
+        <tr>
+          <th>headsign</th>
+          <td>{{ trip_headsign }}</td>
+        </tr>
+      </table>
+      <h3>Schedule</h3>
+      <table class="table">
+        <thead class="thead-light">
+          <tr>
+            <th><div class="text-center">Mon</div></th>
+            <th><div class="text-center">Tue</div></th>
+            <th><div class="text-center">Wed</div></th>
+            <th><div class="text-center">Thu</div></th>
+            <th><div class="text-center">Fri</div></th>
+            <th><div class="text-center">Sat</div></th>
+            <th><div class="text-center">Sun</div></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="text-center" v-if="service.monday == '1'">o</div></td>
+            <td><div class="text-center" v-if="service.tuesday == '1'">o</div></td>
+            <td><div class="text-center" v-if="service.wednesday == '1'">o</div></td>
+            <td><div class="text-center" v-if="service.thursday == '1'">o</div></td>
+            <td><div class="text-center" v-if="service.friday == '1'">o</div></td>
+            <td><div class="text-center" v-if="service.saturday == '1'">o</div></td>
+            <td><div class="text-center" v-if="service.sunday == '1'">o</div></td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>Timetable</h3>
+      <div style="width: 750px; overflow-x: scroll">
+        <table class="table table-striped">
+          <thead class="thead-light">
+            <tr>
+              <th></th>
+              <th v-for="stop in stops">{{ stop.stop_name }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(stop_time, i) in stop_times">
+              <td style="white-space: nowrap">For {{ trips[i].trip_headsign }}</td>
+              <td v-for="time in stop_time"><span v-if="time">{{ time.arrival_time | trim_sec }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </script>
   <script type="text/x-template" id="stop-list">
     <div>
       <h2>Stop List</h2>
@@ -308,6 +374,10 @@
       hour = ('00' + hour).substr(-2, 2);
       min = ('00' + min).substr(-2, 2);
       return hour + ':' + min;
+    });
+
+    Vue.filter('trim_sec', function (time) {
+      return time.replace(/:\d\d$/, '');
     });
 
     const router = new VueRouter({
@@ -379,15 +449,15 @@
 
                 for (var key in gtfs.routes) {
                   if (gtfs.routes[key].route_short_name == route_name || gtfs.routes[key].route_long_name == route_name) {
-                    var route = { ...gtfs.routes[key] };
+                    var route = gtfs.routes[key];
                     route['services'] = [];
                     routes.push(route);
                     route_ids.push(route.route_id);
                   }
                 }
 
-                for (var i in gtfs.trips) {
-                  var trip = { ...gtfs.trips[i] };
+                for (var trip_id in gtfs.trips) {
+                  var trip = gtfs.trips[trip_id];
                   if (route_ids.includes(trip['route_id'])) {
                     if (typeof route_trips[trip['route_id']] == 'undefined') {
                       route_trips[trip['route_id']] = {};
@@ -422,6 +492,93 @@
 
                 this.routes = sortFunc(routes, ['route_short_name', 'route_long_name']);
                 this.calendar = gtfs.calendar;
+              }
+            }
+          }
+        },
+        {
+          path: '/routes/:route_id/:service_id',
+          component: {
+            template: '#route-timetable',
+            data: function () {
+              return {
+                route: {},
+                trip_headsign: '',
+                trips: [],
+                stops: [],
+                stop_times: []
+              }
+            },
+            created: function () {
+              this.init();
+            },
+            methods: {
+              init() {
+                const route_id = this.$route.params.route_id;
+                const service_id = this.$route.params.service_id;
+
+                let trips = [];
+                let trip_ids = [];
+                let trip_headsign;
+                for (let trip_id in gtfs.trips) {
+                  let trip = gtfs.trips[trip_id];
+                  if (trip.route_id == route_id && trip.service_id == service_id) {
+                    trips.push(trip);
+                    trip_ids.push(trip_id);
+                    trip_headsign = trip.trip_headsign;
+                  }
+                }
+
+                let _stop_times = {};
+                for (let i in gtfs.stop_times) {
+                  let stop_time = gtfs.stop_times[i];
+                  if (!trip_ids.includes(stop_time.trip_id)) {
+                    continue;
+                  }
+                  if (typeof _stop_times[stop_time.trip_id] == 'undefined') {
+                    _stop_times[stop_time.trip_id] = [];
+                  }
+                  _stop_times[stop_time.trip_id].push(stop_time);
+                }
+
+                let stop_times = [];
+                for (let trip_id in _stop_times) {
+                  stop_times.push(sortFunc(_stop_times[trip_id], ['stop_sequence']));
+                }
+
+                let stops = [];
+                let max = 0;
+                for (let i in stop_times) {
+                  let _stops = [];
+                  if (stop_times[i].length > max) {
+                    max = stop_times[i].length;
+                    for (let j in stop_times[i]) {
+                      _stops.push(gtfs.stops[stop_times[i][j].stop_id])
+                    }
+                    stops = _stops;
+                  }
+                }
+
+                for (let i in stop_times) {
+                  for (let j in stops) {
+                    if (stop_times[i].length <= j) {
+                      break;
+                    }
+                    if (stop_times[i][j].stop_id != stops[j].stop_id) {
+                      stop_times[i].splice(j, 0, null);
+                    }
+                  }
+                  if (stop_times[i].length > stops.length) {
+                    stop_times[i].splice(stops.length, stop_times[i].length - stops.length);
+                  }
+                }
+
+                this.route = gtfs.routes[route_id];
+                this.trip_headsign = trip_headsign;
+                this.service = gtfs.calendar[service_id];
+                this.trips = trips;
+                this.stops = stops;
+                this.stop_times = stop_times;
               }
             }
           }
