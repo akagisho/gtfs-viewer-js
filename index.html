@@ -320,32 +320,36 @@
         </thead>
         <tbody>
           <tr>
-            <td><div class="text-center" v-if="service.monday == '1'">o</div></td>
-            <td><div class="text-center" v-if="service.tuesday == '1'">o</div></td>
-            <td><div class="text-center" v-if="service.wednesday == '1'">o</div></td>
-            <td><div class="text-center" v-if="service.thursday == '1'">o</div></td>
-            <td><div class="text-center" v-if="service.friday == '1'">o</div></td>
-            <td><div class="text-center" v-if="service.saturday == '1'">o</div></td>
-            <td><div class="text-center" v-if="service.sunday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.monday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.tuesday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.wednesday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.thursday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.friday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.saturday == '1'">o</div></td>
+            <td><div class="text-center" v-if="calendar.sunday == '1'">o</div></td>
           </tr>
         </tbody>
       </table>
       <h3>Timetable</h3>
-      <div style="width: 750px; overflow-x: scroll">
-        <table class="table table-striped">
-          <thead class="thead-light">
-            <tr>
-              <th></th>
-              <th v-for="stop in stops">{{ stop.stop_name }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="trip in trips">
-              <td style="white-space: nowrap">For {{ trip.trip_headsign }}</td>
-              <td v-for="time in trip.stop_times"><span v-if="time">{{ time.arrival_time | trim_sec }}</span></td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-for="way in ways">
+        <h4>For {{ way.trip_headsign }}</h4>
+        <p>({{ way.trips.length }} trips, {{ way.stops.length }} stops)</p>
+        <div style="width: 750px; overflow-x: scroll">
+          <table class="table table-striped">
+            <thead class="thead-light">
+              <tr>
+                <th v-for="stop in way.stops">{{ stop.stop_name }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="trip in way.trips">
+                <td v-for="time in trip.stop_times">
+                  <span v-if="time">{{ time.arrival_time | trim_sec }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </script>
@@ -557,10 +561,9 @@
             template: '#route-timetable',
             data: function () {
               return {
+                calendar: {},
                 route: {},
-                trips: [],
-                stops: [],
-                stop_times: []
+                ways: [],
               }
             },
             created: function () {
@@ -571,76 +574,91 @@
                 const route_id = this.$route.params.route_id;
                 const service_id = this.$route.params.service_id;
 
-                let trips = [];
+                let _trips = {};
                 let trip_ids = [];
                 for (let trip_id in gtfs.trips) {
-                  let trip = gtfs.trips[trip_id];
-                  if (trip.route_id == route_id && trip.service_id == service_id) {
-                    trips.push({ ...trip });
+                  if (gtfs.trips[trip_id].route_id == route_id && gtfs.trips[trip_id].service_id == service_id) {
+                    let trip = { ...gtfs.trips[trip_id] };
+                    trip.stop_times = [];
+                    _trips[trip_id] = trip;
                     trip_ids.push(trip_id);
                   }
                 }
 
-                let _stop_times = {};
                 for (let i in gtfs.stop_times) {
                   let stop_time = gtfs.stop_times[i];
-                  if (!trip_ids.includes(stop_time.trip_id)) {
+                  let trip_id = stop_time.trip_id;
+                  if (!trip_ids.includes(trip_id)) {
                     continue;
                   }
-                  if (typeof _stop_times[stop_time.trip_id] == 'undefined') {
-                    _stop_times[stop_time.trip_id] = [];
-                  }
-                  _stop_times[stop_time.trip_id].push(stop_time);
+                  _trips[trip_id].stop_times.push(stop_time);
                 }
 
-                let stop_times = [];
-                for (let trip_id in _stop_times) {
-                  stop_times.push(sortFunc(_stop_times[trip_id], ['stop_sequence']));
+                let trips = [];
+                for (let trip_id in _trips) {
+                  let trip = _trips[trip_id];
+                  trip.stop_times = sortFunc(trip.stop_times, ['stop_sequence']);
+                  trip.departure_time = time2sec(trip.stop_times[0].departure_time);
+
+                  trip.stop_ids = [];
+                  for (let i in trip.stop_times) {
+                    trip.stop_ids.push(trip.stop_times[i].stop_id)
+                  }
+                  trip.stops_str = trip.stop_ids.join('|');
+                  trip.stops_count = trip.stop_ids.length;
+
+                  trips.push(trip);
+                }
+                trips = sortFunc(trips, ['stops_count']).reverse();
+
+                let _ways = {};
+                for (let i in trips) {
+                  let trip = trips[i];
+
+                  if (i == 0) {
+                    _ways[trip.stops_str] = {};
+                    _ways[trip.stops_str].trip_headsign = trip.trip_headsign;
+                    _ways[trip.stops_str].trips = [];
+                    _ways[trip.stops_str].trips.push(trip);
+
+                    let stops = [];
+                    for (let i in trip.stop_ids) {
+                      stops.push(gtfs.stops[trip.stop_ids[i]]);
+                    }
+                    _ways[trip.stops_str].stops = stops;
+
+                    continue;
+                  }
+
+                  for (let stops_str in _ways) {
+                    //if (stops_str.indexOf(trip.stops_str) == -1) {
+                    if (stops_str != trip.stops_str) {
+                      _ways[trip.stops_str] = {};
+                      _ways[trip.stops_str].trip_headsign = trip.trip_headsign;
+                      _ways[trip.stops_str].trips = [];
+                      _ways[trip.stops_str].trips.push(trip);
+
+                      let stops = [];
+                      for (let i in trip.stop_ids) {
+                        stops.push(gtfs.stops[trip.stop_ids[i]]);
+                      }
+                      _ways[trip.stops_str].stops = stops;
+                    } else {
+                      _ways[stops_str].trips.push(trip);
+                    }
+                  }
                 }
 
-                let stops = [];
-                let max = 0;
-                for (let i in stop_times) {
-                  let _stops = [];
-                  if (stop_times[i].length > max) {
-                    max = stop_times[i].length;
-                    for (let j in stop_times[i]) {
-                      _stops.push(gtfs.stops[stop_times[i][j].stop_id])
-                    }
-                    stops = _stops;
-                  }
+                let ways = [];
+                for (let stops_str in _ways) {
+                  _ways[stops_str].trips = sortFunc(_ways[stops_str].trips, ['departure_time']);
+                  ways.push(_ways[stops_str]);
                 }
+                ways = sortFunc(ways, ['trip_headsign']);
 
-                for (let i in stop_times) {
-                  let trip_id = stop_times[i][0]['trip_id'];
-                  let departure_time = time2sec(stop_times[i][0]['departure_time']);
-
-                  for (let j in stops) {
-                    if (stop_times[i].length <= j) {
-                      break;
-                    }
-                    if (stop_times[i][j].stop_id != stops[j].stop_id) {
-                      stop_times[i].splice(j, 0, null);
-                    }
-                  }
-                  if (stop_times[i].length > stops.length) {
-                    stop_times[i].splice(stops.length, stop_times[i].length - stops.length);
-                  }
-
-                  for (let j in trips) {
-                    if (trips[j]['trip_id'] == trip_id) {
-                      trips[j]['departure_time'] = departure_time;
-                      trips[j]['stop_times'] = stop_times[i];
-                      break;
-                    }
-                  }
-                }
-
+                this.calendar = gtfs.calendar[service_id];
                 this.route = gtfs.routes[route_id];
-                this.service = gtfs.calendar[service_id];
-                this.trips = sortFunc(trips, ['departure_time']);
-                this.stops = stops;
-                this.stop_times = stop_times;
+                this.ways = ways;
               }
             }
           }
