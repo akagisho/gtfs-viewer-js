@@ -760,19 +760,24 @@
                 for (let i in gtfs.stop_times) {
                   if (stop_ids.includes(gtfs.stop_times[i].stop_id)) {
                     let stop_time = { ...gtfs.stop_times[i] };
-                    let route_id = gtfs.trips[stop_time['trip_id']]['route_id'];
+                    let route_id = gtfs.trips[stop_time.trip_id].route_id;
+
+                    if (typeof gtfs.calendar[gtfs.trips[stop_time.trip_id].service_id] == 'undefined') {
+                      // TODO: refer calendar_dates
+                      continue;
+                    }
 
                     if (typeof _routes[route_id] == 'undefined') {
                       _routes[route_id] = { ...gtfs.routes[route_id] }
-                      _routes[route_id]['stop_times'] = [];
+                      _routes[route_id].stop_times = [];
                     }
-                    _routes[route_id]['stop_times'].push(Object.assign(stop_time, {
-                      stop: gtfs.stops[stop_time['stop_id']],
-                      trip: gtfs.trips[stop_time['trip_id']],
-                      route_id: gtfs.trips[stop_time['trip_id']]['route_id'],
-                      route: gtfs.routes[gtfs.trips[stop_time['trip_id']]['route_id']],
-                      service_id: gtfs.trips[stop_time['trip_id']]['service_id'],
-                      calendar: gtfs.calendar[gtfs.trips[stop_time['trip_id']]['service_id']]
+                    _routes[route_id].stop_times.push(Object.assign(stop_time, {
+                      stop: gtfs.stops[stop_time.stop_id],
+                      trip: gtfs.trips[stop_time.trip_id],
+                      route_id: gtfs.trips[stop_time.trip_id].route_id,
+                      route: gtfs.routes[gtfs.trips[stop_time.trip_id].route_id],
+                      service_id: gtfs.trips[stop_time.trip_id].service_id,
+                      calendar: gtfs.calendar[gtfs.trips[stop_time.trip_id].service_id]
                     }));
                   }
                 }
