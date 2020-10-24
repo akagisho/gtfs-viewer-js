@@ -360,11 +360,13 @@
         <thead>
           <tr>
             <th>name</th>
+            <th>routes</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="stop in stops">
-            <td><router-link :to="{ path: '/stops/' + stop }">{{ stop }}</router-link></td>
+            <td><router-link :to="{ path: '/stops/' + stop.stop_name }">{{ stop.stop_name }}</router-link></td>
+            <td><div class="text-right">{{ stop.route_ids.length }}</div></td>
           </tr>
         </tbody>
       </table>
@@ -677,11 +679,53 @@
             },
             methods: {
               init() {
-                var stops = [];
-                for (var key in gtfs.stops) {
-                  stops.push(gtfs.stops[key].stop_name);
+                let trips_route = {};
+                for (let trip_id in gtfs.trips) {
+                  let trip = gtfs.trips[trip_id];
+                  trips_route[trip_id] = trip.route_id;
                 }
-                this.stops = Array.from(new Set(stops));
+
+                let stop_route_ids = {};
+                for (let i in gtfs.stop_times) {
+                  let stop_time = gtfs.stop_times[i];
+                  let trip_id = stop_time.trip_id;
+                  let route_id = trips_route[trip_id];
+
+                  if (typeof stop_route_ids[stop_time.stop_id] == 'undefined') {
+                    stop_route_ids[stop_time.stop_id] = [];
+                  }
+                  if (!stop_route_ids[stop_time.stop_id].includes(route_id)) {
+                    stop_route_ids[stop_time.stop_id].push(route_id);
+                  }
+                }
+
+                let _stops = [];
+                for (let stop_id in gtfs.stops) {
+                  let stop = gtfs.stops[stop_id];
+                  if (typeof _stops[stop.stop_name] == 'undefined') {
+                    _stops[stop.stop_name] = {};
+                    _stops[stop.stop_name].stops = [];
+                    _stops[stop.stop_name].stop_name = stop.stop_name;
+                    _stops[stop.stop_name].route_ids = [];
+                  }
+
+                  _stops[stop.stop_name].stops.push(stop);
+                  if (typeof stop_route_ids[stop_id] != 'undefined') {
+                    for (let key in stop_route_ids[stop_id]) {
+                      let route_id = stop_route_ids[stop_id][key];
+                      if (!_stops[stop.stop_name].route_ids.includes(route_id)) {
+                        _stops[stop.stop_name].route_ids.push(route_id);
+                      }
+                    }
+                  }
+                }
+
+                let stops = [];
+                for (let stop_name in _stops) {
+                  stops.push(_stops[stop_name]);
+                }
+
+                this.stops = stops;
               }
             }
           }
